@@ -21,10 +21,18 @@ def ln(inputs, epsilon=1e-8, scope="ln"):
 
     return outputs
 
+def layer_norm(input_tensor, name=None):
+    """Run layer normalization on the last dimension of the tensor."""
+    return tf.contrib.layers.layer_norm(
+        inputs=input_tensor, begin_norm_axis=-1, begin_params_axis=-1, scope=name)
 
-def get_token_embeddings(vocab_size, num_units, zero_pad=True):
+
+def get_token_embeddings(embd, vocab_size, num_units, zero_pad=True):
     with tf.variable_scope("shared_weight_matrix"):
-        embeddings = tf.get_variable('weight_mat',
+        if embd is not None:
+            embeddings = tf.Variable(initial_value=embd, trainable=False, dtype=tf.float32, name="weight_mat")
+        else:
+            embeddings = tf.get_variable('weight_mat',
                                      dtype=tf.float32,
                                      shape=(vocab_size, num_units),
                                      initializer=tf.contrib.layers.xavier_initializer())
@@ -70,6 +78,33 @@ def scaled_dot_product_attention(Q, K, V, key_masks,
 
     return outputs
 
+def gelu(x):
+  """Gaussian Error Linear Unit.
+  This is a smoother version of the RELU.
+  Original paper: https://arxiv.org/abs/1606.08415
+  Args:
+    x: float Tensor to perform activation.
+  Returns:
+    `x` with the GELU activation applied.
+  """
+  cdf = 0.5 * (1.0 + tf.tanh(
+      (np.sqrt(2 / np.pi) * (x + 0.044715 * tf.pow(x, 3)))))
+  return x * cdf
+
+def gather_indexes(sequence_tensor, positions):
+    """Gathers the vectors at the specific positions over a minibatch."""
+    sequence_shape = sequence_tensor.shape.as_list()
+    batch_size = sequence_shape[0]
+    seq_length = sequence_shape[1]
+    width = sequence_shape[2]
+
+    flat_offsets = tf.reshape(
+        tf.range(0, batch_size, dtype=tf.int32) * seq_length, [-1, 1])
+    flat_positions = tf.reshape(positions + flat_offsets, [-1])
+    flat_sequence_tensor = tf.reshape(sequence_tensor,
+                                    [batch_size * seq_length, width])
+    output_tensor = tf.gather(flat_sequence_tensor, flat_positions)
+    return output_tensor
 
 def mask(inputs, key_masks=None, type=None):
     padding_num = -2 ** 32 + 1
