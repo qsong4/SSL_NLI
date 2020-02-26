@@ -140,13 +140,23 @@ def encode(inp, dict, maxlen):
     return x[0]
 
 
-def process_file(fpath, vocab_fpath, masked_lm_prob, max_predictions_per_seq):
+def process_file(fpath, vocab_fpath, masklen, masked_lm_prob, max_predictions_per_seq, rng):
+    inputs_a = []
+    inputs_b = []
+    masked_positions_a = []
+    masked_labels_a = []
+    masked_weights_a = []
+    masked_positions_b = []
+    masked_labels_b = []
+    masked_weights_b = []
+    related_labels = []
+
     token2idx, _, vocab = load_vocab(vocab_fpath)
     vocab_len = len(vocab)
     with open(fpath, 'r') as fr:
 
         sentences = list(fr.readlines())
-        sentences = rng.shuffle(sentences)
+        rng.shuffle(sentences)
         sent_len = len(sentences)
         for sent in sentences:
             content = sent.strip().split('\t')
@@ -156,8 +166,8 @@ def process_file(fpath, vocab_fpath, masked_lm_prob, max_predictions_per_seq):
 
             #50%的概率是有关系的
             if rng.random() > 0.5:
-                enc_a = encode(senta, token2idx)
-                enc_b = encode(sentb, token2idx)
+                enc_a = encode(senta, token2idx, masklen)
+                enc_b = encode(sentb, token2idx, masklen)
 
             else:
                 label = 'not_related'
@@ -169,13 +179,27 @@ def process_file(fpath, vocab_fpath, masked_lm_prob, max_predictions_per_seq):
                 sentb = sentences[sentb_index].strip().split('\t')[1]
                 enc_b = encode(sentb, token2idx)
 
-            (enc_a, masked_lm_positions_a, masked_lm_labels_a) \
+            (enc_a, masked_lm_positions_a, masked_lm_labels_a, masked_lm_weights_a) \
                 = create_masked_lm(enc_a, masked_lm_prob, max_predictions_per_seq, vocab_len,
                                    rng)
 
-            (enc_b, masked_lm_positions_b, masked_lm_labels_b) \
+            (enc_b, masked_lm_positions_b, masked_lm_labels_b, masked_lm_weights_b) \
                 = create_masked_lm(enc_b, masked_lm_prob, max_predictions_per_seq, vocab_len,
                                    rng)
+
+            inputs_a.append(enc_a)
+            inputs_b.append(enc_b)
+            masked_positions_a.append(masked_lm_positions_a)
+            masked_labels_a.append(masked_lm_labels_a)
+            masked_weights_a.append(masked_lm_weights_a)
+            masked_positions_b.append(masked_lm_positions_b)
+            masked_labels_b.append(masked_labels_b)
+            masked_weights_b.append(masked_weights_b)
+            related_labels.append(label)
+    return (inputs_a, inputs_b, masked_positions_a, masked_labels_a, masked_weights_a,
+            masked_positions_b, masked_labels_b, masked_weights_b, related_labels)
+
+
 
 def create_masked_lm(enc, masked_lm_prob, max_predictions_per_seq, vocab_len, rng):
     masked_lm_labels = []
@@ -205,23 +229,28 @@ def create_masked_lm(enc, masked_lm_prob, max_predictions_per_seq, vocab_len, rn
         #记录mask的位置
         masked_lm_positions.append(index)
 
-    return enc,masked_lm_positions,masked_lm_labels
+    masked_lm_weights = [1.0] * len(masked_lm_labels)
+
+    return enc,masked_lm_positions,masked_lm_labels, masked_lm_weights
+
+def shuffle_helper(features):
+    pass
 
 
+def get_batch(features, batch_size, rng, shuffle=False):
+    inputs_a, inputs_b, masked_positions_a, masked_labels_a, masked_weights_a,\
+    masked_positions_b, masked_labels_b, masked_weights_b, related_labels = features
+    instance_len = len(inputs_a)
+    num_batches = calc_num_batches(instance_len, batch_size)
 
-def get_batch(fpath, maxlen, vocab_fpath, batch_size, shuffle=False, char_maxlen=-1, char_vocab_fpath=None, with_char=False):
+    for i in range(num_batches):
+        start_id = i*batch_size
+        end_id = min((i+1)*batch_size, instance_len)
+        yield inputs_a[start_id:end_id], inputs_b[start_id:end_id], masked_positions_a[start_id:end_id],\
+              masked_labels_a[start_id:end_id], masked_weights_a[start_id:end_id],\
+              masked_positions_b[start_id:end_id], masked_labels_b[start_id:end_id], \
+              masked_weights_b[start_id:end_id], related_labels[start_id:end_id]
 
-    sents1, sents2, labels = load_data(fpath, maxlen)
-    batches = input_fn(sents1, sents2, labels, maxlen, vocab_fpath, batch_size, char_maxlen=char_maxlen, char_vocab_fpath=char_vocab_fpath, with_char=with_char, shuffle=shuffle)
-    num_batches = calc_num_batches(len(sents1), batch_size)
-
-    return batches, num_batches, len(sents1)
-
-
-def get_batch_infer(sents1, sents2, maxlen, vocab_fpath, batch_size):
-    batches = input_fn_infer(sents1, sents2, maxlen, vocab_fpath, batch_size)
-    return batches
 
 if __name__ == '__main__':
-    #preprocessVec("./data/vec/glove.840B.300d.txt", "./data/snli.vocab", "./data/vec/snil_trimmed_vec.npy")
-    #a = encode_char()
+    preprocessVec("./data/vec/glove.840B.300d.txt", "./data/snli.vocab", "./data/vec/snil_trimmed_vec.npy")
