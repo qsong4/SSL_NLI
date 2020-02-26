@@ -5,10 +5,11 @@ from tqdm import tqdm
 import numpy as np
 import re
 from keras.preprocessing.sequence import pad_sequences
+import tensorflow.keras as kr
 from gensim.models import Word2Vec
 import random
 
-rng = random.Random(5)
+#rng = random.Random(5)
 
 def loadGloVe(filename):
     embd = np.load(filename)
@@ -140,7 +141,7 @@ def encode(inp, dict, maxlen):
     return x[0]
 
 
-def process_file(fpath, vocab_fpath, masklen, masked_lm_prob, max_predictions_per_seq, rng):
+def process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per_seq, rng):
     inputs_a = []
     inputs_b = []
     masked_positions_a = []
@@ -166,8 +167,8 @@ def process_file(fpath, vocab_fpath, masklen, masked_lm_prob, max_predictions_pe
 
             #50%的概率是有关系的
             if rng.random() > 0.5:
-                enc_a = encode(senta, token2idx, masklen)
-                enc_b = encode(sentb, token2idx, masklen)
+                enc_a = encode(senta, token2idx, maxlen)
+                enc_b = encode(sentb, token2idx, maxlen)
 
             else:
                 label = 'not_related'
@@ -187,6 +188,7 @@ def process_file(fpath, vocab_fpath, masklen, masked_lm_prob, max_predictions_pe
                 = create_masked_lm(enc_b, masked_lm_prob, max_predictions_per_seq, vocab_len,
                                    rng)
 
+
             inputs_a.append(enc_a)
             inputs_b.append(enc_b)
             masked_positions_a.append(masked_lm_positions_a)
@@ -196,6 +198,9 @@ def process_file(fpath, vocab_fpath, masklen, masked_lm_prob, max_predictions_pe
             masked_labels_b.append(masked_labels_b)
             masked_weights_b.append(masked_weights_b)
             related_labels.append(label)
+
+    #这里是二分类任务，所以numcls设置为了2
+    related_labels = kr.utils.to_categorical(related_labels, num_classes = 2)
     return (inputs_a, inputs_b, masked_positions_a, masked_labels_a, masked_weights_a,
             masked_positions_b, masked_labels_b, masked_weights_b, related_labels)
 
@@ -237,7 +242,7 @@ def shuffle_helper(features):
     pass
 
 
-def get_batch(features, batch_size, rng, shuffle=False):
+def get_batch(features, batch_size):
     inputs_a, inputs_b, masked_positions_a, masked_labels_a, masked_weights_a,\
     masked_positions_b, masked_labels_b, masked_weights_b, related_labels = features
     instance_len = len(inputs_a)
