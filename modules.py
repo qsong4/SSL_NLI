@@ -91,19 +91,43 @@ def gelu(x):
       (np.sqrt(2 / np.pi) * (x + 0.044715 * tf.pow(x, 3)))))
   return x * cdf
 
+def get_shape_list(tensor):
+
+  shape = tensor.shape.as_list()
+
+  non_static_indexes = []
+  for (index, dim) in enumerate(shape):
+    if dim is None:
+      non_static_indexes.append(index)
+
+  if not non_static_indexes:
+    return shape
+
+  dyn_shape = tf.shape(tensor)
+  for index in non_static_indexes:
+    shape[index] = dyn_shape[index]
+  return shape
+
 def gather_indexes(sequence_tensor, positions):
     """Gathers the vectors at the specific positions over a minibatch."""
-    sequence_shape = sequence_tensor.shape.as_list()
+    sequence_shape = get_shape_list(sequence_tensor)
     batch_size = sequence_shape[0]
     seq_length = sequence_shape[1]
     width = sequence_shape[2]
 
+    print("positions shape: ", positions.shape)
+
     flat_offsets = tf.reshape(
         tf.range(0, batch_size, dtype=tf.int32) * seq_length, [-1, 1])
     flat_positions = tf.reshape(positions + flat_offsets, [-1])
+
+    print("flat_positions shape: ", flat_positions.shape)
+
     flat_sequence_tensor = tf.reshape(sequence_tensor,
                                     [batch_size * seq_length, width])
     output_tensor = tf.gather(flat_sequence_tensor, flat_positions)
+    print("flat_sequence_tensor shape: ", flat_sequence_tensor.shape)
+    print("output_tensor shape: ", output_tensor.shape)
     return output_tensor
 
 def mask(inputs, key_masks=None, type=None):

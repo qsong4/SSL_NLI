@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from data_load import loadGloVe
+from data_load import loadGloVe, load_vocab
 from modules import get_token_embeddings, ff, positional_encoding, multihead_attention, ln, gather_indexes \
     ,gelu, layer_norm
 import math
@@ -8,23 +8,25 @@ import math
 class SSLNLI:
     def __init__(self, hp):
         self.hp = hp
+        _, _, _vocab = load_vocab(hp.vocab)
+        self.hp.vocab_size = len(_vocab)
         self.x = tf.placeholder(tf.int32, [None, self.hp.maxlen], name="text_x")
         self.y = tf.placeholder(tf.int32, [None, self.hp.maxlen], name="text_y")
         self.x_len = tf.placeholder(tf.int32, [None])#句子长度边界，用在attention score计算
         self.y_len = tf.placeholder(tf.int32, [None])
-        self.x_mask_position = tf.placeholder(tf.int32, [self.hp.max_predictions_per_seq])#句子mask单词的位置
-        self.y_mask_position = tf.placeholder(tf.int32, [self.hp.max_predictions_per_seq])
-        self.x_mask_ids = tf.placeholder(tf.int32, [self.hp.max_predictions_per_seq])#句子mask位置的正确单词
-        self.y_mask_ids = tf.placeholder(tf.int32, [self.hp.max_predictions_per_seq])
-        self.x_mask_weight = tf.placeholder(tf.int32, [self.hp.max_predictions_per_seq])
-        self.y_mask_weight = tf.placeholder(tf.int32, [self.hp.max_predictions_per_seq])
+        self.x_mask_position = tf.placeholder(tf.int32, [None,self.hp.max_predictions_per_seq])#句子mask单词的位置
+        self.y_mask_position = tf.placeholder(tf.int32, [None,self.hp.max_predictions_per_seq])
+        self.x_mask_ids = tf.placeholder(tf.int32, [None,self.hp.max_predictions_per_seq])#句子mask位置的正确单词
+        self.y_mask_ids = tf.placeholder(tf.int32, [None,self.hp.max_predictions_per_seq])
+        self.x_mask_weight = tf.placeholder(tf.float32, [None,self.hp.max_predictions_per_seq])
+        self.y_mask_weight = tf.placeholder(tf.float32, [None,self.hp.max_predictions_per_seq])
         self.is_related = tf.placeholder(tf.int32, [None, self.hp.num_relats], name="relations")#判断两个句子是否有关系
         self.is_training = tf.placeholder(tf.bool, shape=None, name="is_training")
 
         self.embedding_table = None
-        if self.hp.preembeddinng:
+        if self.hp.preembedding:
             self.embedding_table = loadGloVe(self.hp.vec_path)
-        self.embeddings = get_token_embeddings(self.embedding_table, self.hp.vocab_size, self.hp.d_model, zero_pad=False)
+        self.embeddings = get_token_embeddings(self.embedding_table, self.hp.vocab_size, self.hp.d_model, zero_pad=True)
 
         self.represation()
         self.loss_task1, self.loss_task2, self.loss_task_all = self._loss_op()
@@ -38,8 +40,26 @@ class SSLNLI:
     def get_sequence_output(self):
         return self.sequence_output_x, self.sequence_output_y
 
-    def create_feed_dict(self):
-        pass
+    def create_feed_dict(self, features, is_training):
+        inputs_a, inputs_b, a_lens, b_lens,masked_positions_a, masked_labels_a, masked_weights_a, \
+        masked_positions_b, masked_labels_b, masked_weights_b, related_labels = features
+        feed_dict = {
+            self.x: inputs_a,
+            self.y: inputs_b,
+            self.x_len: a_lens,
+            self.y_len: b_lens,
+            self.x_mask_position: masked_positions_a,
+            self.y_mask_position: masked_positions_b,
+            self.x_mask_ids: masked_labels_a,
+            self.y_mask_ids: masked_labels_b,
+            self.x_mask_weight: masked_weights_a,
+            self.y_mask_weight: masked_weights_b,
+            self.is_related: related_labels,
+            self.is_training: is_training,
+
+        }
+
+        return feed_dict
 
     def pre_encoder(self, x):
         with tf.variable_scope("pre_encoder", reuse=tf.AUTO_REUSE):
@@ -52,7 +72,7 @@ class SSLNLI:
             enc = tf.nn.embedding_lookup(self.embeddings, x) # (N, T1, d_model)
             enc *= self.hp.d_model**0.5 # scale
 
-            enc += positional_encoding(enc, self.hp.maxlen1)
+            enc += positional_encoding(enc, self.hp.maxlen)
             enc = tf.layers.dropout(enc, self.hp.dropout_rate, training=self.is_training)
 
             return enc, src_masks
@@ -98,6 +118,8 @@ class SSLNLI:
         self.sequence_output_x = self.all_layers_x[-1] #encoder最后一层的输出(batchsize,seq_len,hidden_size)
         self.sequence_output_y = self.all_layers_y[-1]  # encoder最后一层的输出
 
+        print("sequence_output shape: ", self.sequence_output_x.shape)
+
         #简单使用第一个标签作为最后输出。
         #后面可以结合常见的attention交互
         self.pooled_output_x = self.pooler(self.sequence_output_x) #得到cls标签的向量(batchsize,hidden_size)
@@ -127,6 +149,8 @@ class SSLNLI:
 
     def mask_lm_loss(self, sequence_output, mask_position, mask_ids, label_weights):
         input_tensor = gather_indexes(sequence_output, mask_position)
+
+        print("gather_indexes shape: ", input_tensor.shape)
 
         with tf.variable_scope("cls/predictions", reuse=tf.AUTO_REUSE):
             # We apply one more non-linear transformation before the output layer.
@@ -167,9 +191,8 @@ class SSLNLI:
             return loss
 
     def sentence_relate_loss(self, x, y):
-
         x = tf.concat([x , y, x-y, x*y], axis=-1)
-        self.sentence_logits = self.fc_2l(x, num_units = [self.hp.d_model, self.hp.num_class], scope="fc_2l")
+        self.sentence_logits = self.fc_2l(x, num_units = [self.hp.d_model, self.hp.num_relats], scope="fc_2l")
         loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.sentence_logits, labels=self.is_related))
         return loss
 

@@ -24,7 +24,7 @@ def removePunc(inputStr):
     string = re.sub(r"\W+", "", inputStr)
     return string.strip()
 
-def prepro_snli(train_file, dev_file, test_file, vocab_file, char_file):
+def prepro_snli(train_file, dev_file, test_file, vocab_file):
     vocab_set = set()
     label_set = set()
     for f in (train_file, dev_file, test_file):
