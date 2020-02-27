@@ -76,10 +76,18 @@ with tf.Session() as sess:
         batch_train = get_batch(train_features, hp.batch_size, shuffle=True)
         batch_count = 0
         for features in batch_train:
+            _, _, _, _,_, _, _,_, _, _,related_labels = features
             batch_count += 1
             feed_dict = m.create_feed_dict(features, True)
-            _, _t1loss, _t2loss, _loss, _t2acc, _gs= sess.run([m.train, m.loss_task1, m.loss_task2, m.loss_task_all,
-                                                             m.acc, m.global_step], feed_dict=feed_dict)
+            _, _t1loss, _t2loss, _loss, _logit, _t2acc, _gs= sess.run([m.train, m.loss_task1, m.loss_task2, m.loss_task_all,
+                                                              m.sentence_logits, m.acc, m.global_step], feed_dict=feed_dict)
+
+
+            label_pred = tf.argmax(_logit, 1, name='label_pred')
+            print(label_pred)
+            print(_logit)
+            print(related_labels)
+            print(_t2acc)
             task1_loss += _t1loss
             task2_loss += _t2loss
             total_loss += _loss

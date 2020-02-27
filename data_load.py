@@ -214,6 +214,7 @@ def process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per
     print("masked_lm_positions_a: ", masked_positions_a[0,:])
     print("masked_lm_labels_a: ", masked_labels_a[0,:])
     print("masked_lm_weights_a: ", masked_weights_a[0,:])
+    print("related_labels: ", related_labels[0, :])
 
     return (inputs_a, inputs_b, a_lens, b_lens,
             masked_positions_a, masked_labels_a, masked_weights_a,

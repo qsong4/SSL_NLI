@@ -29,6 +29,7 @@ class SSLNLI:
         self.embeddings = get_token_embeddings(self.embedding_table, self.hp.vocab_size, self.hp.d_model, zero_pad=True)
 
         self.represation()
+        self.sentence_logits = self.sentence_relate_logit()
         self.loss_task1, self.loss_task2, self.loss_task_all = self._loss_op()
         self.acc = self._acc_op()
         self.global_step = self._globalStep_op()
@@ -190,9 +191,16 @@ class SSLNLI:
 
             return loss
 
+    def sentence_relate_logit(self):
+        x = self.pooled_output_x
+        y = self.pooled_output_y
+        x = tf.concat([x, y, x - y, x * y], axis=-1)
+        sentence_logits = self.fc_2l(x, num_units=[self.hp.d_model, self.hp.num_relats], scope="fc_2l")
+        return sentence_logits
+
     def sentence_relate_loss(self, x, y):
-        x = tf.concat([x , y, x-y, x*y], axis=-1)
-        self.sentence_logits = self.fc_2l(x, num_units = [self.hp.d_model, self.hp.num_relats], scope="fc_2l")
+        # x = tf.concat([x , y, x-y, x*y], axis=-1)
+        # self.sentence_logits = self.fc_2l(x, num_units = [self.hp.d_model, self.hp.num_relats], scope="fc_2l")
         loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.sentence_logits, labels=self.is_related))
         return loss
 
