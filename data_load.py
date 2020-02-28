@@ -174,6 +174,9 @@ def process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per
             if rng.random() > 0.5:
                 enc_a, len_a = encode(senta, token2idx, maxlen)
                 enc_b, len_b = encode(sentb, token2idx, maxlen)
+                print("related")
+                print("senta:", senta)
+                print("sentb:", sentb)
 
             else:
                 label = 'not_related'
@@ -182,7 +185,10 @@ def process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per
                     sentb_index = rng.randint(0, sent_len - 1)
                     if sentences[sentb_index] != sent:
                         break
+                print("not_related")
+                print("senta:", senta)
                 sentb = sentences[sentb_index].strip().split('\t')[1]
+                print("sentb:", sentb)
                 enc_b, len_b = encode(sentb, token2idx, maxlen)
             (enc_a, masked_lm_positions_a, masked_lm_labels_a, masked_lm_weights_a) \
                 = create_masked_lm(enc_a, len_a, masked_lm_prob, max_predictions_per_seq, vocab_len,

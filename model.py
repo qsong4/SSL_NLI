@@ -191,9 +191,46 @@ class SSLNLI:
 
             return loss
 
+    def fusion(self, x, align):
+        with tf.variable_scope('align', reuse=tf.AUTO_REUSE):
+            x = tf.concat([
+                tf.layers.dense(tf.concat([x, align], axis=-1), self.hp.d_model, activation=tf.nn.relu, name='orig'),
+                tf.layers.dense(tf.concat([x, x - align], axis=-1), self.hp.d_model, activation=tf.nn.relu, name='sub'),
+                tf.layers.dense(tf.concat([x, x * align], axis=-1), self.hp.d_model, activation=tf.nn.relu, name='mul'),
+            ], axis=-1)
+            x = tf.layers.dropout(x, self.hp.dropout_rate, training=self.is_training)
+            x = tf.layers.dense(x, self.hp.d_model, activation=tf.nn.relu, name="proj")
+            return x
+
+    def pooling(self, x, mask):
+        return tf.reduce_max(mask * x + (1. - mask) * tf.float32.min, axis=1)
+
+    def sentence_relate_caozuo(self, x, y):
+        x_masks = tf.sequence_mask(self.x_len, self.hp.maxlen, dtype=tf.float32)
+        y_masks = tf.sequence_mask(self.y_len, self.hp.maxlen, dtype=tf.float32)
+        x_masks = tf.expand_dims(x_masks, axis=-1)
+        y_masks = tf.expand_dims(y_masks, axis=-1)
+
+        align_x, align_y = self.calculate_att(x, y)
+        x = self.fusion(x, align_x)
+        y = self.fusion(y, align_y)
+
+        x = self.pooling(x, x_masks)
+        y = self.pooling(y, y_masks)
+
+        return x, y
+
+
+
+
     def sentence_relate_logit(self):
-        x = self.pooled_output_x
-        y = self.pooled_output_y
+        # 只使用cls标签来判断两句关系，目前效果不好，不知道是数据原因还是使用cls这种设置不合理
+        # 打算尝试使用全部输出再试试
+        # x = self.pooled_output_x
+        # y = self.pooled_output_y
+        x = self.sequence_output_x
+        y = self.sequence_output_y
+        x, y = self.sentence_relate_caozuo(x, y)
         x = tf.concat([x, y, x - y, x * y], axis=-1)
         sentence_logits = self.fc_2l(x, num_units=[self.hp.d_model, self.hp.num_relats], scope="fc_2l")
         return sentence_logits
@@ -225,8 +262,8 @@ class SSLNLI:
 
     def _acc_op(self):
         with tf.variable_scope('acc', reuse=tf.AUTO_REUSE):
-            label_pred = tf.argmax(self.sentence_logits, name='label_pred')
-            label_true = tf.argmax(self.is_related, name='label_true')
+            label_pred = tf.argmax(self.sentence_logits, 1, name='label_pred')
+            label_true = tf.argmax(self.is_related, 1, name='label_true')
             correct_pred = tf.equal(tf.cast(label_pred, tf.int32), tf.cast(label_true, tf.int32))
             accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32), name='Accracy')
         return accuracy
@@ -238,7 +275,7 @@ class SSLNLI:
             mask_a = tf.expand_dims(mask_a, axis=-1)
             mask_b = tf.expand_dims(mask_b, axis=-1)
             temperature = tf.get_variable('temperature', shape=(), dtype=tf.float32, trainable=True,
-                                          initializer=tf.constant_initializer(math.sqrt(1 / self.args.hidden_size)))
+                                          initializer=tf.constant_initializer(math.sqrt(1 / self.hp.hidden_size)))
 
             attention = self._attention(a, b, temperature, self.hp.dropout_rate)
             attention_mask = tf.matmul(mask_a, mask_b, transpose_b=True)
