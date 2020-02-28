@@ -9,6 +9,7 @@ from hparams import Hparams
 import math
 import random
 #os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+import pickle
 
 def evaluate(sess, eval_features):
 
@@ -42,11 +43,20 @@ parser = hparams.parser
 hp = parser.parse_args()
 rng = random.Random(hp.rand_seed)
 
-print("# Prepare train file")
-train_features = process_file(hp.train, hp.vocab, hp.maxlen, hp.masked_lm_prob, hp.max_predictions_per_seq, rng)
-print("# Prepare dev file")
-eval_features = process_file(hp.eval, hp.vocab, hp.maxlen, hp.masked_lm_prob, hp.max_predictions_per_seq, rng)
+if not os.path.exists(hp.train_prepro):
+    print(" Prepare train file")
+    train_features = process_file(hp.train, hp.vocab, hp.maxlen, hp.masked_lm_prob, hp.max_predictions_per_seq, rng)
+    print(" Prepare dev file")
+    eval_features = process_file(hp.eval, hp.vocab, hp.maxlen, hp.masked_lm_prob, hp.max_predictions_per_seq, rng)
 
+    print("save training data~~~~")
+    pickle.dump(train_features,open(hp.train_prepro, 'wb'))
+    pickle.dump(eval_features,open(hp.dev_prepro, 'wb'))
+
+else:
+    print("extract training data~~~~")
+    train_features = pickle.load(open(hp.train_prepro, 'rb'))
+    eval_features = pickle.load(open(hp.dev_prepro, 'rb'))
 
 print("# Load model")
 m = SSLNLI(hp)
@@ -76,18 +86,18 @@ with tf.Session() as sess:
         batch_train = get_batch(train_features, hp.batch_size, shuffle=True)
         batch_count = 0
         for features in batch_train:
-            _, _, _, _,_, _, _,_, _, _,related_labels = features
             batch_count += 1
             feed_dict = m.create_feed_dict(features, True)
-            _, _t1loss, _t2loss, _loss, _logit, _t2acc, _gs= sess.run([m.train, m.loss_task1, m.loss_task2, m.loss_task_all,
-                                                              m.sentence_logits, m.acc, m.global_step], feed_dict=feed_dict)
+            _, _t1loss, _t2loss, _loss, _t2acc, _gs= sess.run([m.train, m.loss_task1, m.loss_task2, m.loss_task_all,
+                                                               m.acc, m.global_step], feed_dict=feed_dict)
 
 
-            label_pred = tf.argmax(_logit, 1, name='label_pred')
-            print(label_pred)
-            print(_logit)
-            print(related_labels)
-            print(_t2acc)
+            # label_pred = tf.argmax(_logit, 1, name='label_pred')
+            # print(label_pred)
+            # print(_logit)
+            # print(related_labels)
+            # print(_t2acc)
+
             task1_loss += _t1loss
             task2_loss += _t2loss
             total_loss += _loss
