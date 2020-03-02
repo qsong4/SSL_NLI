@@ -29,10 +29,10 @@ def evaluate(sess, eval_features):
         total_loss += _loss
         total_acc += _t2acc
 
-    dev_loss = total_loss / batch_count
-    dev_task2_acc = total_acc / batch_count
-    dev_task1_loss = total_t1loss / batch_count
-    dev_task2_loss = total_t2loss / batch_count
+    dev_loss = total_loss / num_eval_batches
+    dev_task2_acc = total_acc / num_eval_batches
+    dev_task1_loss = total_t1loss / num_eval_batches
+    dev_task2_loss = total_t2loss / num_eval_batches
 
 
     return dev_loss, dev_task1_loss, dev_task2_loss, dev_task2_acc

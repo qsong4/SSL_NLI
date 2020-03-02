@@ -43,12 +43,12 @@ def prepro_snli(train_file, dev_file, test_file, vocab_file):
                         continue
                     vocab_set.add(i)
                 label_set.add(label)
-    #0: <pad>, 1: <unk>, 2: <s>, 3: </s>
+    #0: <pad>, 1: <unk>, 2: <mask>, 3:*
     with open(vocab_file, "w") as fw:
         fw.write("<pad>"+"\n")
         fw.write("<unk>"+"\n")
         fw.write("<mask>" + "\n")
-        fw.write("<cls>" + "\n")
+        # fw.write("<cls>" + "\n")
         for i in vocab_set:
             fw.write(i+'\n')
 

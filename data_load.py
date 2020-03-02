@@ -23,8 +23,8 @@ def loadGloVe_2(filename, emb_size):
     embd['<pad>'] = [0]*emb_size
     #embd['<pad>'] = list(rarray)
     embd['<unk>'] = list(rarray)
-    embd['<cls>'] = list(rarray_cls)
-    file = open(filename,'r')
+    #embd['<cls>'] = list(rarray_cls)
+    file = open(filename, 'r')
     for line in tqdm(file.readlines()):
         row = line.rstrip().split(' ')
         if row[0] in embd.keys():
@@ -127,7 +127,7 @@ def encode(inp, dict, maxlen):
     #x = [dict.get(t, dict["<unk>"]) for t in inp]
     #for snli dateset
     x = []
-    x.append(dict["<cls>"])#第一个是cls标签
+    #x.append(dict["<cls>"])#第一个是cls标签
     for i in re.split(r"\W+", inp):
         i = i.strip()
         i = removePunc(i)
@@ -140,7 +140,112 @@ def encode(inp, dict, maxlen):
     #x = [dict.get(t, dict["<unk>"]) for t in re.split(r"\W+'", inp)]
     return x[0], x_len
 
+
+#每个句子都找一个没关系的
 def process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per_seq, rng):
+
+    token2idx, _, vocab = load_vocab(vocab_fpath)
+    vocab_len = len(vocab)
+    with open(fpath, 'r') as fr:
+
+        sentences = list(fr.readlines())
+        rng.shuffle(sentences)
+        real_len = len(sentences)
+        sent_len = 2 * len(sentences)
+
+        inputs_a = np.zeros((sent_len, maxlen))
+        inputs_b = np.zeros((sent_len, maxlen))
+        a_lens = np.zeros(sent_len)
+        b_lens = np.zeros(sent_len)
+        masked_positions_a = np.zeros((sent_len, max_predictions_per_seq))
+        masked_labels_a = np.zeros((sent_len, max_predictions_per_seq))
+        masked_weights_a = np.zeros((sent_len, max_predictions_per_seq))
+        masked_positions_b = np.zeros((sent_len, max_predictions_per_seq))
+        masked_labels_b = np.zeros((sent_len, max_predictions_per_seq))
+        masked_weights_b = np.zeros((sent_len, max_predictions_per_seq))
+        related_labels = []
+
+        extra_index = 0
+        for index, sent in tqdm(enumerate(sentences)):
+            content = sent.strip().split('\t')
+            senta = content[0]
+            sentb = content[1]
+            real_label = content[2]
+            label = 'related'
+
+            enc_a, len_a = encode(senta, token2idx, maxlen)
+            enc_b, len_b = encode(sentb, token2idx, maxlen)
+
+            (enc_a, masked_lm_positions_a, masked_lm_labels_a, masked_lm_weights_a) \
+                = create_masked_lm(enc_a, len_a, masked_lm_prob, max_predictions_per_seq, vocab_len,
+                                   rng)
+
+            (enc_b, masked_lm_positions_b, masked_lm_labels_b, masked_lm_weights_b) \
+                = create_masked_lm(enc_b, len_b, masked_lm_prob, max_predictions_per_seq, vocab_len,
+                                   rng)
+
+            inputs_a[extra_index, :] = np.array(enc_a)
+            inputs_b[extra_index, :] = np.array(enc_b)
+            a_lens[extra_index] = len_a
+            b_lens[extra_index] = len_b
+            masked_positions_a[extra_index, :] = np.array(masked_lm_positions_a)
+            masked_positions_b[extra_index, :] = np.array(masked_lm_positions_b)
+            masked_labels_a[extra_index, :] = np.array(masked_lm_labels_a)
+            masked_labels_b[extra_index, :] = np.array(masked_lm_labels_b)
+            masked_weights_a[extra_index, :] = np.array(masked_lm_weights_a)
+            masked_weights_b[extra_index, :] = np.array(masked_lm_weights_b)
+            related_labels.append([label])
+
+            extra_index += 1
+
+            for _ in range(10):
+                sentb_index = rng.randint(0, real_len - 1)
+                #print(sentences[sentb_index])
+                if sentences[sentb_index].strip().split('\t')[0] != senta:
+                    break
+            sentb2 = sentences[sentb_index].strip().split('\t')[1]
+            enc_b2, len_b2 = encode(sentb2, token2idx, maxlen)
+            label2 = 'not_related'
+
+            (enc_b2, masked_lm_positions_b2, masked_lm_labels_b2, masked_lm_weights_b2) \
+                = create_masked_lm(enc_b2, len_b2, masked_lm_prob, max_predictions_per_seq, vocab_len,
+                                   rng)
+
+            inputs_a[extra_index, :] = np.array(enc_a)
+            inputs_b[extra_index, :] = np.array(enc_b2)
+            a_lens[extra_index] = len_a
+            b_lens[extra_index] = len_b2
+            masked_positions_a[extra_index, :] = np.array(masked_lm_positions_a)
+            masked_positions_b[extra_index, :] = np.array(masked_lm_positions_b2)
+            masked_labels_a[extra_index, :] = np.array(masked_lm_labels_a)
+            masked_labels_b[extra_index, :] = np.array(masked_lm_labels_b2)
+            masked_weights_a[extra_index, :] = np.array(masked_lm_weights_a)
+            masked_weights_b[extra_index, :] = np.array(masked_lm_weights_b2)
+            related_labels.append([label2])
+
+            extra_index += 1
+
+
+
+    #这里是二分类任务，所以numcls设置为了2
+    label_enc = OneHotEncoder(sparse=False, categories='auto')
+    related_labels = label_enc.fit_transform(related_labels)
+    #related_labels = kr.utils.to_categorical(related_labels, num_classes = 2)
+
+    print("***********data example***********")
+    print("enc_a: ", inputs_a[0,:])
+    print("masked_lm_positions_a: ", masked_positions_a[0,:])
+    print("masked_lm_labels_a: ", masked_labels_a[0,:])
+    print("masked_lm_weights_a: ", masked_weights_a[0,:])
+    print("related_labels: ", related_labels[0, :])
+
+    return (inputs_a, inputs_b, a_lens, b_lens,
+            masked_positions_a, masked_labels_a, masked_weights_a,
+            masked_positions_b, masked_labels_b, masked_weights_b,
+            related_labels)
+
+#task2 contradiction neutral没关系的
+def _process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per_seq, rng):
 
     token2idx, _, vocab = load_vocab(vocab_fpath)
     vocab_len = len(vocab)
@@ -216,6 +321,7 @@ def process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per
             masked_positions_b, masked_labels_b, masked_weights_b,
             related_labels)
 
+#task2 50%有关系
 def _process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per_seq, rng):
 
     token2idx, _, vocab = load_vocab(vocab_fpath)

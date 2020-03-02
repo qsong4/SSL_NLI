@@ -129,7 +129,7 @@ class SSLNLI:
     def _loss_op(self):
         task2_loss = self.sentence_relate_loss(self.pooled_output_x, self.pooled_output_y)
         task1_loss_x = self.mask_lm_loss(self.sequence_output_x, self.x_mask_position,self.x_mask_ids, self.x_mask_weight)
-        task1_loss_y = self.mask_lm_loss(self.sequence_output_x, self.x_mask_position,self.y_mask_ids,self.y_mask_weight)
+        task1_loss_y = self.mask_lm_loss(self.sequence_output_y, self.y_mask_position,self.y_mask_ids,self.y_mask_weight)
         task1_loss = task1_loss_x + task1_loss_y
         return task1_loss, task2_loss, task1_loss + task2_loss
 
@@ -219,9 +219,6 @@ class SSLNLI:
         y = self.pooling(y, y_masks)
 
         return x, y
-
-
-
 
     def sentence_relate_logit(self):
         # 只使用cls标签来判断两句关系，目前效果不好，不知道是数据原因还是使用cls这种设置不合理
