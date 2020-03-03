@@ -142,7 +142,7 @@ def encode(inp, dict, maxlen):
 
 
 #每个句子都找一个没关系的
-def process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per_seq, rng):
+def _process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per_seq, rng):
 
     token2idx, _, vocab = load_vocab(vocab_fpath)
     vocab_len = len(vocab)
@@ -244,8 +244,8 @@ def process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per
             masked_positions_b, masked_labels_b, masked_weights_b,
             related_labels)
 
-#task2 contradiction neutral没关系的
-def _process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per_seq, rng):
+#task2 contradiction 没关系的，entailment,neutral有关系
+def process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_per_seq, rng):
 
     token2idx, _, vocab = load_vocab(vocab_fpath)
     vocab_len = len(vocab)
@@ -278,11 +278,12 @@ def _process_file(fpath, vocab_fpath, maxlen, masked_lm_prob, max_predictions_pe
             enc_a, len_a = encode(senta, token2idx, maxlen)
             enc_b, len_b = encode(sentb, token2idx, maxlen)
             #contradiction和neutral的
-            if real_label == 'contradiction' or real_label == "neutral":
-                label = 'related'
+            if real_label == 'contradiction':
+                label = 'not_related'
+
 
             else:
-                label = 'not_related'
+                label = 'related'
 
             (enc_a, masked_lm_positions_a, masked_lm_labels_a, masked_lm_weights_a) \
                 = create_masked_lm(enc_a, len_a, masked_lm_prob, max_predictions_per_seq, vocab_len,
@@ -477,4 +478,4 @@ def get_batch(features, batch_size, shuffle=True):
 
 
 if __name__ == '__main__':
-    preprocessVec("./data/vec/glove.840B.300d.txt", "./data/snli.vocab", "./data/vec/snil_trimmed_vec.npy")
+    preprocessVec("./data/vec/glove.840B.300d.txt", "./data/snli.vocab", "./data/vec/snli_trimmed_vec.npy")

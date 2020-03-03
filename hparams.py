@@ -16,7 +16,7 @@ class Hparams:
 
     parser.add_argument('--model_path', default='SSLNLI_E%02dL%.3fA%.3f')
     parser.add_argument('--modeldir', default='./model')
-    parser.add_argument('--vec_path', default='./data/vec/snil_trimmed_vec.npy')
+    parser.add_argument('--vec_path', default='./data/vec/snli_trimmed_vec.npy')
 
     ## vocabulary
     parser.add_argument('--vocab', default='./data/snli.vocab',
@@ -45,7 +45,7 @@ class Hparams:
 
     parser.add_argument('--max_predictions_per_seq', default=10, type=int,
                         help="max_predictions_per_seq")
-    parser.add_argument('--inter_attention', default=False, type=bool,
+    parser.add_argument('--inter_attention', default=True, type=bool,
                         help="inter_attention")
     parser.add_argument('--num_blocks_inter', default=3, type=int,
                         help="num_blocks_inter")

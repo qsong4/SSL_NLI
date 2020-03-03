@@ -358,8 +358,8 @@ class SSLNLI:
                                                causality=False)
                     # feed forward
 
-                    enx = ff(enx, num_units=[self.hp.d_ff, self.hp.d_model])
-                    eny = ff(eny, num_units=[self.hp.d_ff, self.hp.d_model])
+                    encx = ff(encx, num_units=[self.hp.d_ff, self.hp.d_model])
+                    ency = ff(ency, num_units=[self.hp.d_ff, self.hp.d_model])
 
                     all_layer_x.append(encx)
                     all_layer_y.append(ency)
