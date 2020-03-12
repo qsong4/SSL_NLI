@@ -14,8 +14,10 @@ class Hparams:
     parser.add_argument('--dev_prepro', default='./data/dev_prepro',
                         help="processed dev data")
 
-    parser.add_argument('--model_path', default='SSLNLI_E%02dL%.3fA%.3f')
+    parser.add_argument('--model_path', default='SSLNLI_E%02dL%.3f')
     parser.add_argument('--modeldir', default='./model')
+    parser.add_argument('--modeldir_cls', default='./model_cls')
+    parser.add_argument('--model_path_cls', default='SSLNLI_cls_E%02dL%.3f')
     parser.add_argument('--vec_path', default='./data/vec/snli_trimmed_vec.npy')
 
     ## vocabulary
@@ -31,7 +33,7 @@ class Hparams:
     #parser.add_argument('--early_stop', default=20, type=int)
 
     parser.add_argument('--lr', default=0.0003, type=float, help="learning rate")
-    parser.add_argument('--masked_lm_prob', default=0.2, type=float)
+    parser.add_argument('--local_layer', default=2, type=float)
     parser.add_argument('--num_epochs', default=5, type=int)
     parser.add_argument('--rand_seed', default=123, type=int)
 
@@ -42,20 +44,22 @@ class Hparams:
                         help="hidden dimension of feedforward layer")
     parser.add_argument('--hidden_size', default=300, type=int,
                         help="hidden_size")
+    parser.add_argument('--lstm_dim', default=128, type=int,
+                        help="hidden_size")
 
-    parser.add_argument('--max_predictions_per_seq', default=10, type=int,
-                        help="max_predictions_per_seq")
-    parser.add_argument('--inter_attention', default=True, type=bool,
+    parser.add_argument('--inter_attention', default=False, type=bool,
                         help="inter_attention")
     parser.add_argument('--num_blocks_inter', default=3, type=int,
                         help="num_blocks_inter")
-    parser.add_argument('--num_blocks_encoder', default=3, type=int,
+    parser.add_argument('--num_dense_blocks', default=3, type=int,
+                        help="num_blocks_inter")
+    parser.add_argument('--num_blocks_encoder', default=4, type=int,
                         help="num_blocks_encoder")
     parser.add_argument('--num_heads', default=6, type=int,
                         help="number of attention heads")
     parser.add_argument('--maxlen', default=50, type=int,
                         help="maximum length of a source sequence")
-    parser.add_argument('--num_relats', default=2, type=int,
+    parser.add_argument('--num_class', default=3, type=int,
                         help="number of class")
     parser.add_argument('--dropout_rate', default=0.1, type=float)
     parser.add_argument('--is_training', default=True, type=bool)
