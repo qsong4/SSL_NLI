@@ -126,8 +126,8 @@ with tf.Session() as sess:
 
         # save model each epoch
         print("#########SAVE MODEL###########")
-        model_output = hp.model_path % (epoch, dev_loss2, dev_task2_acc)
-        ckpt_name = os.path.join(hp.modeldir, model_output)
+        model_output = hp.model_path_cls % (epoch, dev_task2_acc)
+        ckpt_name = os.path.join(hp.modeldir_cls, model_output)
         saver.save(sess, ckpt_name, global_step=_gs)
         print("training of {} epochs, {} has been saved.".format(epoch, ckpt_name))
 

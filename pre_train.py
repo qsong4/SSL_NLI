@@ -28,7 +28,7 @@ hparams = Hparams()
 parser = hparams.parser
 hp = parser.parse_args()
 rng = random.Random(hp.rand_seed)
-
+tf.nn.nce_loss
 if not os.path.exists(hp.train_prepro):
     print(" Prepare train file")
     train_features = process_file_snli(hp.train, hp.vocab, hp.maxlen, rng)

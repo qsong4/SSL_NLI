@@ -147,8 +147,23 @@ class SSLNLI:
         all_layers_x = self.encode(pre_x, x_mask)
         all_layers_y = self.encode(pre_y, y_mask)
 
-        if self.hp.inter_attention:
-            all_layers_x, all_layers_y = self.inter_encode(all_layers_x[-1], all_layers_y[-1], x_mask, y_mask)
+        # if self.hp.inter_attention:
+        #     all_layers_x, all_layers_y = self.inter_encode(all_layers_x[-1], all_layers_y[-1], x_mask, y_mask)
+
+        encx = all_layers_x[-1]
+        ency = all_layers_y[-1]
+
+        all_layers_x = []
+        all_layers_y = []
+
+        all_layers_x.append(encx)
+        all_layers_y.append(ency)
+
+        for i in range(self.hp.num_dense_blocks):
+            encx, ency = self.dense_blocks(encx, ency, all_layers_x, all_layers_y, x_mask, y_mask,
+                                           scope="num_dense_blocks_{}".format(i))
+            all_layers_x.append(encx)
+            all_layers_y.append(ency)
 
         self.x_global = all_layers_x[-1]
         self.y_global = all_layers_y[-1]
@@ -169,6 +184,122 @@ class SSLNLI:
         y_cls2_scores = self.cls(y_cls_in2, [self.hp.d_model, 1], scope="y_cls")
 
         return x_cls1_scores, x_cls2_scores, y_cls1_scores, y_cls2_scores
+
+    def dense_blocks(self, a_repre, b_repre, x_layer, y_layer, x_masks, y_masks, scope, reuse=tf.AUTO_REUSE):
+        with tf.variable_scope(scope, reuse=reuse):
+
+            _encx = multihead_attention(queries=a_repre,
+                                       keys=a_repre,
+                                       values=a_repre,
+                                       key_masks=x_masks,
+                                       num_heads=self.hp.num_heads,
+                                       dropout_rate=self.hp.dropout_rate,
+                                       training=self.hp.is_training,
+                                       causality=False)
+            # self-attention
+            _ency = multihead_attention(queries=b_repre,
+                                       keys=b_repre,
+                                       values=b_repre,
+                                       key_masks=y_masks,
+                                       num_heads=self.hp.num_heads,
+                                       dropout_rate=self.hp.dropout_rate,
+                                       training=self.hp.is_training,
+                                       causality=False)
+
+            # self-attention
+
+            encx = multihead_attention(queries=_encx,
+                                       keys=_ency,
+                                       values=_encx,
+                                       key_masks=x_masks,
+                                       num_heads=self.hp.num_heads,
+                                       dropout_rate=self.hp.dropout_rate,
+                                       training=self.hp.is_training,
+                                       causality=False)
+
+            # self-attention
+            ency = multihead_attention(queries=b_repre,
+                                       keys=b_repre,
+                                       values=b_repre,
+                                       key_masks=y_masks,
+                                       num_heads=self.hp.num_heads,
+                                       dropout_rate=self.hp.dropout_rate,
+                                       training=self.hp.is_training,
+                                       causality=False)
+
+            encx, ency = self._infer(encx, ency)
+
+            encx, ency = self._dense_infer(encx, ency, x_layer, y_layer)
+            dim = encx.shape.as_list()[-1]
+            # feed forward
+            encx = ff(encx, num_units=[self.hp.d_ff, dim])
+            ency = ff(ency, num_units=[self.hp.d_ff, dim])
+
+
+            return encx, ency
+
+    def _dense_infer(self, encx, ency, x_layer, y_layer, scope="dese_local_inference"):
+        with tf.variable_scope(scope):
+
+            #可以有两种方式
+            #1. concat前面所有层的信息
+            #2. 只concat前面一层的信息
+            a_res = tf.concat([x_layer[-1]] + [encx], axis=2)
+            b_res = tf.concat([y_layer[-1]] + [ency], axis=2)
+            a_res = tf.layers.dropout(a_res, self.hp.dropout_rate, training=self.hp.is_training)
+            b_res = tf.layers.dropout(b_res, self.hp.dropout_rate, training=self.hp.is_training)
+            #if layer_num in self.AE_layer:
+            a_res = self._project_op(a_res)  # (?,?,d_model)
+            b_res = self._project_op(b_res)  # (?,?,d_model)
+            # if layer_num in self.AE_layer:
+            #     a_res, ae_loss_a = self._AutoEncoder(a_res)
+            #     b_res, ae_loss_b = self._AutoEncoder(b_res)
+
+        return a_res, b_res
+
+    def _infer(self, encx, ency, scope="local_inference"):
+        with tf.variable_scope(scope):
+
+            attentionWeights = tf.matmul(encx, tf.transpose(ency, [0, 2, 1]))
+            attentionSoft_a = tf.nn.softmax(attentionWeights)
+            attentionSoft_b = tf.nn.softmax(tf.transpose(attentionWeights))
+            attentionSoft_b = tf.transpose(attentionSoft_b)
+
+            a_hat = tf.matmul(attentionSoft_a, ency)
+            b_hat = tf.matmul(attentionSoft_b, encx)
+            a_diff = tf.subtract(encx, a_hat)
+            a_mul = tf.multiply(encx, a_hat)
+            b_diff = tf.subtract(ency, b_hat)
+            b_mul = tf.multiply(ency, b_hat)
+
+            a_res = tf.concat([a_hat, a_diff, a_mul], axis=2)
+            b_res = tf.concat([b_hat, b_diff, b_mul], axis=2)
+
+            # BN
+            # a_res = tf.layers.batch_normalization(a_res, training=self.is_training, name='bn1', reuse=tf.AUTO_REUSE)
+            # b_res = tf.layers.batch_normalization(b_res, training=self.is_training, name='bn2', reuse=tf.AUTO_REUSE)
+            # project
+            a_res = self._project_op(a_res)  # (?,?,d_model)
+            b_res = self._project_op(b_res)  # (?,?,d_model)
+
+            # a_res += encx
+            # b_res += ency
+            a_res = tf.concat([encx, a_res], axis=-1)
+            b_res = tf.concat([ency, b_res], axis=-1)
+
+            # a_res = ln(a_res)
+            # b_res = ln(b_res)
+
+        return a_res, b_res
+
+    def _project_op(self, inputx):
+        with tf.variable_scope("projection", reuse=tf.AUTO_REUSE):
+            inputx = tf.layers.dense(inputx, self.hp.d_model,
+                                     activation=tf.nn.relu,
+                                     name='fnn',
+                                     kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
+
+            return inputx
 
     def fc(self, inpt, match_dim, reuse=tf.AUTO_REUSE):
         with tf.variable_scope("fc", reuse=reuse):

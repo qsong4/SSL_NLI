@@ -35,7 +35,7 @@ class Hparams:
 
     parser.add_argument('--lr', default=0.0003, type=float, help="learning rate")
     parser.add_argument('--local_layer', default=2, type=float)
-    parser.add_argument('--num_epochs', default=5, type=int)
+    parser.add_argument('--num_epochs', default=50, type=int)
     parser.add_argument('--rand_seed', default=123, type=int)
 
     # model
