@@ -4,50 +4,45 @@ from data_load import loadGloVe, load_vocab
 from modules import get_token_embeddings, ff, positional_encoding, multihead_attention, ln, gather_indexes \
     ,gelu, layer_norm
 import math
+from model import SSLNLI
 
 class SSLNLI_cls:
     def __init__(self, hp):
         self.hp = hp
-        _, _, _vocab = load_vocab(hp.vocab)
-        self.hp.vocab_size = len(_vocab)
-        self.x = tf.placeholder(tf.int32, [None, self.hp.maxlen], name="text_x")
-        self.y = tf.placeholder(tf.int32, [None, self.hp.maxlen], name="text_y")
-        self.x_len = tf.placeholder(tf.int32, [None])#句子长度边界，用在attention score计算
-        self.y_len = tf.placeholder(tf.int32, [None])
-        self.labels = tf.placeholder(tf.int32, [None, self.hp.num_class], name="relations")#判断两个句子是否有关系
-        self.is_training = tf.placeholder(tf.bool, shape=None, name="is_training")
+        # _, _, _vocab = load_vocab(hp.vocab)
+        # self.hp.vocab_size = len(_vocab)
+        # self.x = tf.placeholder(tf.int32, [None, self.hp.maxlen], name="text_x")
+        # self.y = tf.placeholder(tf.int32, [None, self.hp.maxlen], name="text_y")
+        # self.x_len = tf.placeholder(tf.int32, [None])#句子长度边界，用在attention score计算
+        # self.y_len = tf.placeholder(tf.int32, [None])
+        # self.labels = tf.placeholder(tf.int32, [None, self.hp.num_class], name="relations")#判断两个句子是否有关系
+        # self.is_training = tf.placeholder(tf.bool, shape=None, name="is_training")
 
-        self.embedding_table = None
-        if self.hp.preembedding:
-            self.embedding_table = loadGloVe(self.hp.vec_path)
-        self.embeddings = get_token_embeddings(self.embedding_table, self.hp.vocab_size, self.hp.d_model, zero_pad=True)
+        # self.embedding_table = None
+        # if self.hp.preembedding:
+        #     self.embedding_table = loadGloVe(self.hp.vec_path)
+        # self.embeddings = get_token_embeddings(self.embedding_table, self.hp.vocab_size, self.hp.d_model, zero_pad=True)
 
-        self.represation()
+        self.pre_m = SSLNLI(hp)
+
         self.cls_logits = self._cls_logits()
-        self.loss_ssl = self._loss_ssl_op()
         self.loss_cls = self._loss_cls_op()
         self.acc = self._acc_op()
-        self.global_step = self._globalStep_ssl_op()
-        # self.global_cls_step = self._globalStep_cls_op()
-        self.train = self._training_ssl_op()
-
-    def get_global_feature(self):
-        return self.x_global, self.y_global
-
-    def get_local_feature(self):
-        return self.x_local, self.x_local
+        self.global_step = self._globalStep_cls_op()
+        self.train = self._training_cls_op()
 
     def create_feed_dict(self, features, is_training):
-        inputs_a, inputs_b, a_lens, b_lens, labels = features
-        feed_dict = {
-            self.x: inputs_a,
-            self.y: inputs_b,
-            self.x_len: a_lens,
-            self.y_len: b_lens,
-            self.is_training: is_training,
-            self.labels: labels,
-        }
-        return feed_dict
+        return self.pre_m.create_feed_dict(features, is_training)
+        # inputs_a, inputs_b, a_lens, b_lens, labels = features
+        # feed_dict = {
+        #     self.x: inputs_a,
+        #     self.y: inputs_b,
+        #     self.x_len: a_lens,
+        #     self.y_len: b_lens,
+        #     self.is_training: is_training,
+        #     self.labels: labels,
+        # }
+        # return feed_dict
 
     def pre_encoder(self, x):
         with tf.variable_scope("pre_encoder", reuse=tf.AUTO_REUSE):
@@ -61,7 +56,7 @@ class SSLNLI_cls:
             enc *= self.hp.d_model**0.5 # scale
 
             enc += positional_encoding(enc, self.hp.maxlen)
-            enc = tf.layers.dropout(enc, self.hp.dropout_rate, training=self.is_training)
+            enc = tf.layers.dropout(enc, self.hp.dropout_rate, training=self.pre_m.is_training)
 
             return enc, src_masks
 
@@ -80,7 +75,7 @@ class SSLNLI_cls:
                                               key_masks=x_masks,
                                               num_heads=self.hp.num_heads,
                                               dropout_rate=self.hp.dropout_rate,
-                                              training=self.is_training,
+                                              training=self.pre_m.is_training,
                                               causality=False)
 
 
@@ -90,7 +85,7 @@ class SSLNLI_cls:
                                                key_masks=y_masks,
                                                num_heads=self.hp.num_heads,
                                                dropout_rate=self.hp.dropout_rate,
-                                               training=self.is_training,
+                                               training=self.pre_m.is_training,
                                                causality=False)
 
 
@@ -100,7 +95,7 @@ class SSLNLI_cls:
                                                key_masks=x_masks,
                                                num_heads=self.hp.num_heads,
                                                dropout_rate=self.hp.dropout_rate,
-                                               training=self.is_training,
+                                               training=self.pre_m.is_training,
                                                causality=False)
 
                     ency = multihead_attention(queries=ency,
@@ -109,7 +104,7 @@ class SSLNLI_cls:
                                                key_masks=y_masks,
                                                num_heads=self.hp.num_heads,
                                                dropout_rate=self.hp.dropout_rate,
-                                               training=self.is_training,
+                                               training=self.pre_m.is_training,
                                                causality=False)
                     # feed forward
 
@@ -135,7 +130,7 @@ class SSLNLI_cls:
                                               key_masks=src_masks,
                                               num_heads=self.hp.num_heads,
                                               dropout_rate=self.hp.dropout_rate,
-                                              training=self.is_training,
+                                              training=self.pre_m.is_training,
                                               causality=False)
                     # feed forward
                     encx = ff(encx, num_units=[self.hp.d_ff, self.hp.d_model])
@@ -144,44 +139,14 @@ class SSLNLI_cls:
 
         return all_layer
 
-    def represation(self):
-        pre_x, x_mask = self.pre_encoder(self.x)
-        pre_y, y_mask = self.pre_encoder(self.y)
-
-        all_layers_x = self.encode(pre_x, x_mask)
-        all_layers_y = self.encode(pre_y, y_mask)
-
-        if self.hp.inter_attention:
-            all_layers_x, all_layers_y = self.inter_encode(all_layers_x[-1], all_layers_y[-1], x_mask, y_mask)
-
-        self.x_global = all_layers_x[-1]
-        self.y_global = all_layers_y[-1]
-
-        self.x_local = all_layers_x[self.hp.local_layer]
-        self.y_local = all_layers_y[self.hp.local_layer]
-
-        x_cls_in1 = tf.reduce_max(tf.concat([self.x_global, self.x_local], axis=-1), axis=1)
-        x_cls_in2 = tf.reduce_max(tf.concat([self.x_global, self.y_local], axis=-1), axis=1)
-
-        y_cls_in1 = tf.reduce_max(tf.concat([self.y_global, self.y_local], axis=-1), axis=1)
-        y_cls_in2 = tf.reduce_max(tf.concat([self.y_global, self.x_local], axis=-1), axis=1)
-
-        x_cls1_scores = self.cls(x_cls_in1, [self.hp.d_model, 1], scope="x_cls")
-        x_cls2_scores = self.cls(x_cls_in2, [self.hp.d_model, 1], scope="x_cls")
-
-        y_cls1_scores = self.cls(y_cls_in1, [self.hp.d_model, 1], scope="y_cls")
-        y_cls2_scores = self.cls(y_cls_in2, [self.hp.d_model, 1], scope="y_cls")
-
-        return x_cls1_scores, x_cls2_scores, y_cls1_scores, y_cls2_scores
-
     def _cls_repres(self):
 
         #self.represation()
 
-        x_masks = tf.math.equal(self.x, 0)  # (N, T1)
-        y_masks = tf.math.equal(self.y, 0)  # (N, T1)
+        x_masks = tf.math.equal(self.pre_m.x, 0)  # (N, T1)
+        y_masks = tf.math.equal(self.pre_m.y, 0)  # (N, T1)
 
-        encx, ency = self.get_global_feature()
+        encx, ency = self.pre_m.get_global_feature()
         print("encx shape: ", encx.shape)
         print("ency shape: ", ency.shape)
 
@@ -207,7 +172,7 @@ class SSLNLI_cls:
                                        key_masks=x_masks,
                                        num_heads=self.hp.num_heads,
                                        dropout_rate=self.hp.dropout_rate,
-                                       training=self.is_training,
+                                       training=self.pre_m.is_training,
                                        causality=False)
             # self-attention
             _ency = multihead_attention(queries=b_repre,
@@ -216,7 +181,7 @@ class SSLNLI_cls:
                                        key_masks=y_masks,
                                        num_heads=self.hp.num_heads,
                                        dropout_rate=self.hp.dropout_rate,
-                                       training=self.is_training,
+                                       training=self.pre_m.is_training,
                                        causality=False)
 
             # self-attention
@@ -227,7 +192,7 @@ class SSLNLI_cls:
                                        key_masks=x_masks,
                                        num_heads=self.hp.num_heads,
                                        dropout_rate=self.hp.dropout_rate,
-                                       training=self.is_training,
+                                       training=self.pre_m.is_training,
                                        causality=False)
 
             # self-attention
@@ -237,7 +202,7 @@ class SSLNLI_cls:
                                        key_masks=y_masks,
                                        num_heads=self.hp.num_heads,
                                        dropout_rate=self.hp.dropout_rate,
-                                       training=self.is_training,
+                                       training=self.pre_m.is_training,
                                        causality=False)
 
             encx, ency = self._infer(encx, ency)
@@ -259,8 +224,8 @@ class SSLNLI_cls:
             #2. 只concat前面一层的信息
             a_res = tf.concat([x_layer[-1]] + [encx], axis=2)
             b_res = tf.concat([y_layer[-1]] + [ency], axis=2)
-            a_res = tf.layers.dropout(a_res, self.hp.dropout_rate, training=self.is_training)
-            b_res = tf.layers.dropout(b_res, self.hp.dropout_rate, training=self.is_training)
+            a_res = tf.layers.dropout(a_res, self.hp.dropout_rate, training=self.pre_m.is_training)
+            b_res = tf.layers.dropout(b_res, self.hp.dropout_rate, training=self.pre_m.is_training)
             #if layer_num in self.AE_layer:
             a_res = self._project_op(a_res)  # (?,?,d_model)
             b_res = self._project_op(b_res)  # (?,?,d_model)
@@ -327,17 +292,9 @@ class SSLNLI_cls:
 
         return logits
 
-    def _loss_ssl_op(self):
-        x_cls1_scores, x_cls2_scores, y_cls1_scores, y_cls2_scores = self.represation()
-
-        x_info_loss = -tf.reduce_mean(tf.log(x_cls1_scores + 1e-6) + tf.log(1 - x_cls2_scores + 1e-6))
-        y_info_loss = -tf.reduce_mean(tf.log(y_cls1_scores + 1e-6) + tf.log(1 - y_cls2_scores + 1e-6))
-        loss = x_info_loss + y_info_loss
-
-        return loss
 
     def _loss_cls_op(self, l2_lambda=0.0001):
-        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.cls_logits, labels=self.labels))
+        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.cls_logits, labels=self.pre_m.labels))
         weights = [v for v in tf.trainable_variables() if ('w' in v.name) or ('kernel') in v.name]
         l2_loss = tf.add_n([tf.nn.l2_loss(w) for w in weights]) * l2_lambda
         loss += l2_loss
@@ -351,7 +308,7 @@ class SSLNLI_cls:
                 tf.layers.dense(tf.concat([x, x - align], axis=-1), self.hp.d_model, activation=tf.nn.relu, name='sub'),
                 tf.layers.dense(tf.concat([x, x * align], axis=-1), self.hp.d_model, activation=tf.nn.relu, name='mul'),
             ], axis=-1)
-            x = tf.layers.dropout(x, self.hp.dropout_rate, training=self.is_training)
+            x = tf.layers.dropout(x, self.hp.dropout_rate, training=self.pre_m.is_training)
             x = tf.layers.dense(x, self.hp.d_model, activation=tf.nn.relu, name="proj")
             return x
 
@@ -371,21 +328,9 @@ class SSLNLI_cls:
 
             return inputx
 
-    def _globalStep_ssl_op(self):
-        global_step = tf.train.get_or_create_global_step()
-        return global_step
-
     def _globalStep_cls_op(self):
         global_step = tf.train.get_or_create_global_step()
         return global_step
-
-    def _training_ssl_op(self):
-        optimizer = tf.train.AdadeltaOptimizer(self.hp.lr)
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        with tf.control_dependencies(update_ops):
-            train_op = optimizer.minimize(self.loss_ssl+self.loss_cls, global_step=self.global_step)
-
-        return train_op
 
     def _training_cls_op(self):
         optimizer = tf.train.AdadeltaOptimizer(self.hp.lr)
@@ -397,15 +342,15 @@ class SSLNLI_cls:
     def _acc_op(self):
         with tf.variable_scope('acc', reuse=tf.AUTO_REUSE):
             label_pred = tf.argmax(tf.nn.softmax(self.cls_logits), 1, name='label_pred')
-            label_true = tf.argmax(self.labels, 1, name='label_true')
+            label_true = tf.argmax(self.pre_m.labels, 1, name='label_true')
             correct_pred = tf.equal(tf.cast(label_pred, tf.int32), tf.cast(label_true, tf.int32))
             accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32), name='Accracy')
         return accuracy
 
     def calculate_att(self, a, b, scope='alignnment'):
         with tf.variable_scope(scope):
-            mask_a = tf.sequence_mask(self.x_len, self.hp.maxlen, dtype=tf.float32)
-            mask_b = tf.sequence_mask(self.y_len, self.hp.maxlen, dtype=tf.float32)
+            mask_a = tf.sequence_mask(self.pre_m.x_len, self.hp.maxlen, dtype=tf.float32)
+            mask_b = tf.sequence_mask(self.pre_m.y_len, self.hp.maxlen, dtype=tf.float32)
             mask_a = tf.expand_dims(mask_a, axis=-1)
             mask_b = tf.expand_dims(mask_b, axis=-1)
             temperature = tf.get_variable('temperature', shape=(), dtype=tf.float32, trainable=True,
@@ -426,9 +371,9 @@ class SSLNLI_cls:
 
     def _attention(self, a, b, t, dropout_keep_prob):
         with tf.variable_scope('proj'):
-            a = tf.layers.dense(tf.layers.dropout(a, dropout_keep_prob, training=self.is_training),
+            a = tf.layers.dense(tf.layers.dropout(a, dropout_keep_prob, training=self.pre_m.is_training),
                       self.hp.d_model, activation=tf.nn.relu)
-            b = tf.layers.dense(tf.layers.dropout(b, dropout_keep_prob, training=self.is_training),
+            b = tf.layers.dense(tf.layers.dropout(b, dropout_keep_prob, training=self.pre_m.is_training),
                                 self.hp.d_model, activation=tf.nn.relu)
             return tf.matmul(a, b, transpose_b=True) * t
 

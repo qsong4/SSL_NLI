@@ -18,6 +18,7 @@ class Hparams:
     parser.add_argument('--modeldir', default='./model')
     parser.add_argument('--modeldir_cls', default='./model_cls')
     parser.add_argument('--model_path_cls', default='SSLNLI_cls_E%02dL%.3f')
+    parser.add_argument('--init_checkpoint', default='./model/SSLNLI_E04L2.844-40')
     parser.add_argument('--vec_path', default='./data/vec/snli_trimmed_vec.npy')
 
     ## vocabulary

@@ -13,26 +13,48 @@ import random
 #os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 import pickle
 
+def optimistic_restore(session, save_file):
+    reader = tf.train.NewCheckpointReader(save_file)
+    saved_shapes = reader.get_variable_to_shape_map()
+    var_names = sorted([(var.name, var.name.split(':')[0]) for
+                      var in tf.global_variables()
+                      if var.name.split(':')[0] in saved_shapes])
+    restore_vars = []
+    name2var = dict(zip(map(lambda x: x.name.split(':')[0],tf.global_variables()),tf.global_variables()))
+    with tf.variable_scope('', reuse=True):
+        for var_name, saved_var_name in var_names:
+            curr_var = name2var[saved_var_name]
+            var_shape = curr_var.get_shape().as_list()
+            if saved_var_name == "global_step":
+                continue
+            if var_shape == saved_shapes[saved_var_name]:
+                # print("going to restore.var_name:",var_name,";saved_var_name:",saved_var_name)
+                restore_vars.append(curr_var)
+            else:
+                print("variable not trained.var_name:",var_name)
+    saver = tf.train.Saver(restore_vars)
+    saver.restore(session, save_file)
+
+
+
 def evaluate(sess, eval_features):
 
     total_dev_acc = 0.0
-    total_dev_loss_ssl = 0.0
     total_dev_loss_cls = 0.0
     num_eval_batches = 0
     dev_batch = get_batch(eval_features, hp.batch_size, shuffle=False)
     for features in dev_batch:
         num_eval_batches += 1
         feed_dict = m.create_feed_dict(features, False)
-        _devloss_ssl, _devloss_cls, _devacc, _devgs = sess.run([m.loss_ssl, m.loss_cls, m.acc, m.global_step], feed_dict=feed_dict)
-        total_dev_loss_ssl += _devloss_ssl
+        _devloss_cls, _devacc, _devgs = sess.run([m.loss_cls, m.acc, m.global_step], feed_dict=feed_dict)
+
         total_dev_loss_cls += _devloss_cls
         total_dev_acc += _devacc
 
     dev_loss_cls = total_dev_loss_cls / num_eval_batches
-    dev_loss_ssl = total_dev_loss_ssl / num_eval_batches
     dev_acc = total_dev_acc / num_eval_batches
 
-    return dev_loss_ssl, dev_loss_cls, dev_acc
+    return dev_loss_cls, dev_acc
 
 print("# hparams")
 hparams = Hparams()
@@ -61,15 +83,9 @@ m = SSLNLI_cls(hp)
 print("# Session")
 saver = tf.train.Saver(max_to_keep=hp.num_epochs)
 with tf.Session() as sess:
-    ckpt = tf.train.latest_checkpoint(hp.modeldir)
-    if ckpt is None:
-        print("Initializing from scratch")
-        sess.run(tf.global_variables_initializer())
-        save_variable_specs(os.path.join(hp.modeldir, "specs"))
-    else:
-        saver.restore(sess, ckpt)
+    sess.run(tf.global_variables_initializer())
+    optimistic_restore(sess, hp.init_checkpoint)
 
-    # _gs = sess.run(m.global_step)
 
     tolerant = 0
     for epoch in range(hp.num_epochs):
@@ -84,30 +100,28 @@ with tf.Session() as sess:
         for features in tqdm(batch_train):
             batch_count += 1
             feed_dict = m.create_feed_dict(features, True)
-            _, _loss_ssl, _loss_cls, _acc, _gs = sess.run([m.train, m.loss_ssl, m.loss_cls, m.acc, m.global_step], feed_dict=feed_dict)
+            _, _loss_cls, _acc, _gs = sess.run([m.train, m.loss_cls, m.acc, m.global_step], feed_dict=feed_dict)
 
-            loss_ssl += _loss_ssl
             loss_cls += _loss_cls
             acc += _acc
 
             if batch_count and batch_count % 500 == 0:
                 print("batch {:d}: loss_ssl {:.4f}, loss_cls {:.4f}, acc {:.3f} \n".format(
-                    batch_count, loss_ssl, loss_cls, _acc))
+                    batch_count, 0, loss_cls, _acc))
 
 
         print("\n")
         print("<<<<<<<<<< epoch {} is done >>>>>>>>>>".format(epoch))
         print("# train results")
-        train_loss_ssl = loss_ssl / batch_count
         train_loss_cls = loss_cls / batch_count
         task2_acc = acc/batch_count
 
-        print("训练集: ssl_loss {:.4f}, cls_loss {:.4f}, acc {:.3f} \n".format(train_loss_ssl, train_loss_cls ,task2_acc))
+        print("训练集: ssl_loss {:.4f}, cls_loss {:.4f}, acc {:.3f} \n".format(0, train_loss_cls ,task2_acc))
         #验证集
-        dev_loss1, dev_loss2, dev_task2_acc = evaluate(sess, eval_features)
+        dev_loss2, dev_task2_acc = evaluate(sess, eval_features)
         print("\n")
         print("# evaluation results")
-        print("验证集: ssl_loss {:.4f}, cls_loss {:.4f},acc {:.3f} \n".format(dev_loss1, dev_loss2,dev_task2_acc))
+        print("验证集: ssl_loss {:.4f}, cls_loss {:.4f},acc {:.3f} \n".format(0, dev_loss2,dev_task2_acc))
 
 
         # save model each epoch
