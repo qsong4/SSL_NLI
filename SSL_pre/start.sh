@@ -1,0 +1,1 @@
+nohup python -u pre_train.py &

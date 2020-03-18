@@ -1,13 +1,10 @@
-import tensorflow as tf
 from utils import calc_num_batches
 from sklearn.preprocessing import OneHotEncoder
 from tqdm import tqdm
 import numpy as np
 import re
 from keras.preprocessing.sequence import pad_sequences
-import tensorflow.keras as kr
 from gensim.models import Word2Vec
-import random
 
 
 # rng = random.Random(5)
@@ -205,7 +202,6 @@ def get_batch(features, batch_size, shuffle=True):
         end_id = min((i + 1) * batch_size, instance_len)
         yield (inputs_a[start_id:end_id], inputs_b[start_id:end_id], a_lens[start_id:end_id],
                b_lens[start_id:end_id], related_labels[start_id:end_id])
-
 
 if __name__ == '__main__':
     preprocessVec("./data/vec/glove.840B.300d.txt", "./data/snli.vocab", "./data/vec/snli_trimmed_vec.npy")

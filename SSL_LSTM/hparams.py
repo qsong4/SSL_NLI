@@ -14,12 +14,9 @@ class Hparams:
     parser.add_argument('--dev_prepro', default='./data/dev_prepro',
                         help="processed dev data")
 
-    parser.add_argument('--model_path', default='SSLNLI_E%02dL%.3f')
-    parser.add_argument('--modeldir', default='./model')
-    parser.add_argument('--modeldir_cls', default='./model_cls')
-    parser.add_argument('--model_path_cls', default='SSLNLI_cls_E%02dL%.3f')
-    parser.add_argument('--init_checkpoint', default='./model/SSLNLI_E04L2.844-40')
-    parser.add_argument('--vec_path', default='./data/vec/snli_trimmed_vec.npy')
+    parser.add_argument('--model_path', default='LSTM_E%02dL%.3f')
+    parser.add_argument('--modeldir', default='./SSL_LSTM/model')
+    parser.add_argument('--vec_path', default='../data/vec/snli_trimmed_vec.npy')
 
     ## vocabulary
     parser.add_argument('--vocab', default='./data/snli.vocab',
@@ -48,16 +45,8 @@ class Hparams:
     parser.add_argument('--lstm_dim', default=128, type=int,
                         help="hidden_size")
 
-    parser.add_argument('--inter_attention', default=False, type=bool,
+    parser.add_argument('--isSSL', default=True, type=bool,
                         help="inter_attention")
-    parser.add_argument('--num_blocks_inter', default=3, type=int,
-                        help="num_blocks_inter")
-    parser.add_argument('--num_dense_blocks', default=3, type=int,
-                        help="num_blocks_inter")
-    parser.add_argument('--num_blocks_encoder', default=4, type=int,
-                        help="num_blocks_encoder")
-    parser.add_argument('--num_heads', default=6, type=int,
-                        help="number of attention heads")
     parser.add_argument('--maxlen', default=50, type=int,
                         help="maximum length of a source sequence")
     parser.add_argument('--num_class', default=3, type=int,

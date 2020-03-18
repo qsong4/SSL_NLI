@@ -1,39 +1,17 @@
 import tensorflow as tf
-
-from model_cls import SSLNLI_cls
-from model import SSLNLI
-
+import os,sys
+from SSL_LSTM.model_lstm import SSLNLI_lstm
 from tqdm import tqdm
-from data_load import get_batch, process_file_snli
-from utils import save_variable_specs
+from SSL_LSTM.data_load import get_batch, process_file_snli
 import os
-from hparams import Hparams
-import math
+from SSL_LSTM.hparams import Hparams
 import random
 #os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 import pickle
-
-def optimistic_restore(session, save_file):
-    reader = tf.train.NewCheckpointReader(save_file)
-    saved_shapes = reader.get_variable_to_shape_map()
-    var_names = sorted([(var.name, var.name.split(':')[0]) for
-                      var in tf.global_variables()
-                      if var.name.split(':')[0] in saved_shapes])
-    restore_vars = []
-    name2var = dict(zip(map(lambda x: x.name.split(':')[0],tf.global_variables()),tf.global_variables()))
-    with tf.variable_scope('', reuse=True):
-        for var_name, saved_var_name in var_names:
-            curr_var = name2var[saved_var_name]
-            var_shape = curr_var.get_shape().as_list()
-            if saved_var_name == "global_step":
-                continue
-            if var_shape == saved_shapes[saved_var_name]:
-                # print("going to restore.var_name:",var_name,";saved_var_name:",saved_var_name)
-                restore_vars.append(curr_var)
-            else:
-                print("variable not trained.var_name:",var_name)
-    saver = tf.train.Saver(restore_vars)
-    saver.restore(session, save_file)
+cur_dir = os.path.dirname(os.path.abspath('__file__')) or os.getcwd()
+sys.path.append(cur_dir + "/../SSL_pre")
+from SSL_pre.inference import Inference
+inf = Inference()
 
 
 
@@ -45,6 +23,12 @@ def evaluate(sess, eval_features):
     dev_batch = get_batch(eval_features, hp.batch_size, shuffle=False)
     for features in dev_batch:
         num_eval_batches += 1
+
+        if hp.isSSL:
+            a, b = inf.infer(features)
+            inputs_a, inputs_b, a_lens, b_lens, labels = features
+            features = (a, b, a_lens, b_lens, labels)
+
         feed_dict = m.create_feed_dict(features, False)
         _devloss_cls, _devacc, _devgs = sess.run([m.loss_cls, m.acc, m.global_step], feed_dict=feed_dict)
 
@@ -78,16 +62,15 @@ else:
     eval_features = pickle.load(open(hp.dev_prepro, 'rb'))
 
 print("# Load model")
-m = SSLNLI_cls(hp)
+m = SSLNLI_lstm(hp)
 
 print("# Session")
 saver = tf.train.Saver(max_to_keep=hp.num_epochs)
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
-    optimistic_restore(sess, hp.init_checkpoint)
-
 
     tolerant = 0
+    best_acc = 0.0
     for epoch in range(hp.num_epochs):
 
         loss_ssl = 0.0
@@ -99,6 +82,10 @@ with tf.Session() as sess:
         batch_count = 0
         for features in tqdm(batch_train):
             batch_count += 1
+            if hp.isSSL:
+                a, b = inf.infer(features)
+                inputs_a, inputs_b, a_lens, b_lens, labels = features
+                features = (a, b,  a_lens, b_lens, labels)
             feed_dict = m.create_feed_dict(features, True)
             _, _loss_cls, _acc, _gs = sess.run([m.train, m.loss_cls, m.acc, m.global_step], feed_dict=feed_dict)
 
@@ -107,7 +94,7 @@ with tf.Session() as sess:
 
             if batch_count and batch_count % 500 == 0:
                 print("batch {:d}: loss_ssl {:.4f}, loss_cls {:.4f}, acc {:.3f} \n".format(
-                    batch_count, 0, loss_cls, _acc))
+                    batch_count, 0, _loss_cls, _acc))
 
 
         print("\n")
@@ -123,13 +110,14 @@ with tf.Session() as sess:
         print("# evaluation results")
         print("验证集: ssl_loss {:.4f}, cls_loss {:.4f},acc {:.3f} \n".format(0, dev_loss2,dev_task2_acc))
 
-
-        # save model each epoch
-        print("#########SAVE MODEL###########")
-        model_output = hp.model_path_cls % (epoch, dev_task2_acc)
-        ckpt_name = os.path.join(hp.modeldir_cls, model_output)
-        saver.save(sess, ckpt_name, global_step=_gs)
-        print("training of {} epochs, {} has been saved.".format(epoch, ckpt_name))
+        if dev_task2_acc > best_acc:
+            best_acc = dev_task2_acc
+            # save model each epoch
+            print("#########SAVE MODEL###########")
+            model_output = hp.model_path % (epoch, dev_task2_acc)
+            ckpt_name = os.path.join(hp.modeldir, model_output)
+            saver.save(sess, ckpt_name, global_step=_gs)
+            print("training of {} epochs, {} has been saved.".format(epoch, ckpt_name))
 
 
 print("Done")
